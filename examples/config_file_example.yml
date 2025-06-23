@@ -1,0 +1,70 @@
+# Example .secscan.yml configuration file
+# Place in project root or specify with --config flag
+
+# Minimum severity level to report
+min-severity: medium
+
+# Output format (text, json, csv, sarif)
+output: json
+
+# Exit with code 1 if vulnerabilities at this level or higher are found
+fail-on: critical
+
+# Cache settings
+cache:
+  enabled: true
+  ttl: 3600  # 1 hour
+  directory: ~/.secscan/cache
+
+# Ignored vulnerabilities
+ignore:
+  # Ignore specific vulnerability IDs
+  vulnerabilities:
+    - GHSA-1234-5678-90ab  # False positive in dev environment
+    - CVE-2021-12345       # Risk accepted by security team
+  
+  # Ignore specific package versions
+  packages:
+    - lodash@4.17.20  # Legacy app, update planned for Q2
+    - django@2.2.*    # LTS version, security backports applied
+  
+  # Ignore by path patterns
+  paths:
+    - "**/test/**"
+    - "**/examples/**"
+
+# Custom policies
+policies:
+  # Enforce minimum versions
+  minimum-versions:
+    requests: "2.25.0"
+    django: "3.2.0"
+  
+  # Block specific licenses
+  blocked-licenses:
+    - GPL-3.0
+    - AGPL-3.0
+
+# Notification settings
+notifications:
+  slack:
+    webhook: "${SLACK_WEBHOOK_URL}"
+    channel: "#security-alerts"
+    on: ["critical", "high"]
+  
+  email:
+    to: ["security@example.com"]
+    on: ["critical"]
+
+# Auto-update settings (future feature)
+auto-update:
+  enabled: false
+  create-pr: true
+  branch-prefix: "secscan/auto-update"
+  commit-message: "chore: update dependencies for security fixes"
+  
+  # Only auto-update these severity levels
+  severity: ["critical", "high"]
+  
+  # Skip major version updates
+  skip-major: true
