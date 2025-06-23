@@ -1,0 +1,9 @@
+{
+  "name": "corrupted-project",
+  "version": "1.0.0",
+  "dependencies": {
+    "express": "4.17.1",
+    // This is invalid JSON - missing closing quote
+    "lodash": "4.17.20
+  }
+}
