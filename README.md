@@ -1,5 +1,9 @@
 # SecScan - Multi-Language Dependency Vulnerability Scanner
 
+[![Python 3.7+](https://img.shields.io/badge/python-3.7+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![PyPI version](https://badge.fury.io/py/secscan-cli.svg)](https://badge.fury.io/py/secscan-cli)
+
 A fast, reliable CLI tool that automatically detects and scans dependencies for vulnerabilities in JavaScript, Python, and Go projects using the OSV.dev API.
 
 ## Features
@@ -13,35 +17,43 @@ A fast, reliable CLI tool that automatically detects and scans dependencies for 
 
 ## Installation
 
+### From PyPI (recommended)
+
+```bash
+pip install secscan-cli
+```
+
+### From source
+
 ```bash
 # Clone the repository
 git clone https://github.com/yourusername/secscan.git
 cd secscan
 
-# Install dependencies
-pip install requests
+# Install in development mode
+pip install -e .
 ```
 
 ## Usage
 
 ### Basic scan (current directory)
 ```bash
-python secscan.py
+secscan
 ```
 
 ### Scan specific directory
 ```bash
-python secscan.py /path/to/project
+secscan /path/to/project
 ```
 
 ### JSON output
 ```bash
-python secscan.py -f json
+secscan -f json
 ```
 
 ### Command-line options
 ```
-usage: secscan.py [-h] [-f {text,json}] [-v] [path]
+usage: secscan [-h] [-f {text,json}] [-v] [path]
 
 SecScan - Multi-language dependency vulnerability scanner
 
