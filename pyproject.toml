@@ -8,7 +8,7 @@ version = "1.4.0"
 description = "A multi-language dependency vulnerability scanner supporting JavaScript, Python, and Go"
 readme = "README.md"
 authors = [
-    {name = "SecScan Contributors"},
+    {name = "Deo Shankar", email = "deoshankar89@gmail.com"},
 ]
 license = {text = "MIT"}
 classifiers = [

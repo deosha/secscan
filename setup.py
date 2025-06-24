@@ -13,8 +13,8 @@ long_description = (this_directory / "README.md").read_text(encoding="utf-8")
 setup(
     name="secscan-cli",
     version="1.4.0",
-    author="SecScan Contributors",
-    author_email="",
+    author="Deo Shankar",
+    author_email="deoshankar89@gmail.com",
     description="A multi-language dependency vulnerability scanner supporting JavaScript, Python, and Go",
     long_description=long_description,
     long_description_content_type="text/markdown",
