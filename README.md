@@ -8,12 +8,21 @@ A fast, reliable CLI tool that automatically detects and scans dependencies for 
 
 ## Features
 
+### Core Features
 - 🔍 **Auto-detection** of project language from manifest files
 - 📦 **Multi-language support**: JavaScript (npm), Python (pip), Go modules
 - 🛡️ **OSV.dev API** integration for comprehensive vulnerability data
-- 📊 **Unified output format** across all languages
+- 📊 **Multiple output formats**: Text, JSON, CSV, Markdown, SARIF
 - 🔧 **Language-specific fix commands** for easy remediation
-- 📄 **Multiple output formats**: Human-readable text or JSON
+
+### Advanced Features
+- 🎯 **Severity Filtering**: Filter by severity levels or CVSS scores
+- 💣 **Exploit Detection**: Identify vulnerabilities with known exploits
+- 🚀 **CI/CD Integration**: Smart exit codes and minimal output mode
+- 📋 **Policy Enforcement**: Define complex vulnerability policies
+- 📊 **Statistics**: Detailed scan metrics with visual charts
+- ⚙️ **Configuration Files**: YAML/JSON config with ignore rules
+- 🎛️ **Threshold Limits**: Set maximum allowed vulnerabilities
 
 ## Installation
 
@@ -34,7 +43,7 @@ cd secscan
 pip install -e .
 ```
 
-## Usage
+## Quick Start
 
 ### Basic scan (current directory)
 ```bash
@@ -51,9 +60,34 @@ secscan /path/to/project
 secscan -f json
 ```
 
+### Common Use Cases
+
+```bash
+# CI/CD pipeline - fail on high severity
+secscan --ci --fail-on high
+
+# Security audit - show only critical issues with exploits
+secscan --severity critical --exploitable
+
+# Development - show fixable vulnerabilities
+secscan --has-fix --min-severity medium
+
+# Compliance - enforce policy
+secscan --policy "critical=0,high=0" --stats
+```
+
 ### Command-line options
 ```
-usage: secscan [-h] [-f {text,json}] [-v] [path]
+usage: secscan [-h] [-f {text,json,table,csv,markdown,sarif}] [-o OUTPUT]
+               [--min-severity {low,medium,high,critical}]
+               [--severity SEVERITY] [--cvss-min CVSS_MIN]
+               [--exploitable] [--has-fix]
+               [--fail-on {none,low,medium,high,critical,any}]
+               [--strict] [--ci] [--max-critical MAX_CRITICAL]
+               [--max-high MAX_HIGH] [--max-total MAX_TOTAL]
+               [--policy POLICY] [--policy-file POLICY_FILE]
+               [--stats] [--no-config] [--verbose] [--no-color]
+               [-v] [path]
 
 SecScan - Multi-language dependency vulnerability scanner
 
@@ -62,8 +96,31 @@ positional arguments:
 
 options:
   -h, --help            show this help message and exit
-  -f {text,json}, --format {text,json}
-                        Output format (default: text)
+  -f {text,json,table,csv,markdown,sarif}, --format {text,json,table,csv,markdown,sarif}
+                        Output format
+  -o OUTPUT, --output OUTPUT
+                        Output file (default: stdout)
+  --min-severity {low,medium,high,critical}
+                        Minimum severity to report
+  --severity SEVERITY   Show only specific severities (comma-separated: critical,high)
+  --cvss-min CVSS_MIN   Filter by minimum CVSS score
+  --exploitable         Only show vulnerabilities with known exploits
+  --has-fix             Only show vulnerabilities with available fixes
+  --fail-on {none,low,medium,high,critical,any}
+                        Exit with non-zero code if vulnerabilities at or above this level are found
+  --strict              Fail on ANY vulnerability regardless of severity
+  --ci                  CI-friendly output mode
+  --max-critical MAX_CRITICAL
+                        Maximum number of critical vulnerabilities allowed
+  --max-high MAX_HIGH   Maximum number of high vulnerabilities allowed
+  --max-total MAX_TOTAL Maximum total number of vulnerabilities allowed
+  --policy POLICY       Policy string (e.g., 'critical=0,high<=3,medium<=10')
+  --policy-file POLICY_FILE
+                        Path to policy JSON file
+  --stats               Show detailed statistics
+  --no-config           Ignore configuration files
+  --verbose             Verbose output
+  --no-color            Disable colored output
   -v, --version         show program's version number and exit
 ```
 
@@ -138,17 +195,123 @@ options:
 }
 ```
 
+## Advanced Usage
+
+### CI/CD Integration
+
+SecScan is designed for seamless CI/CD integration with smart exit codes:
+
+```bash
+# Fail if any HIGH or CRITICAL vulnerabilities found
+secscan --ci --fail-on high
+
+# Strict mode - fail on ANY vulnerability
+secscan --ci --strict
+
+# Set specific thresholds
+secscan --ci --max-critical 0 --max-high 3 --max-total 10
+```
+
+Exit codes:
+- `0`: No vulnerabilities OR below fail threshold
+- `1`: Vulnerabilities at or above fail threshold
+- `2`: Scan error
+
+### Filtering Vulnerabilities
+
+```bash
+# Show only specific severities
+secscan --severity critical,high
+
+# Filter by CVSS score
+secscan --cvss-min 7.0
+
+# Show only exploitable vulnerabilities
+secscan --exploitable
+
+# Show only vulnerabilities with fixes available
+secscan --has-fix
+
+# Combine multiple filters
+secscan --has-fix --cvss-min 7.0 --severity critical,high
+```
+
+### Policy Enforcement
+
+Define complex vulnerability policies:
+
+```bash
+# Inline policy
+secscan --policy "critical=0,high<=3,medium<=10"
+
+# Policy file
+secscan --policy-file .secscan-policy.json
+```
+
+Example policy file:
+```json
+{
+  "rules": {
+    "max_critical": 0,
+    "max_high": 3,
+    "max_cvss_score": 8.0,
+    "require_fixes_for": ["critical", "high"],
+    "max_age_days": {
+      "critical": 7,
+      "high": 30
+    }
+  }
+}
+```
+
+### Configuration Files
+
+SecScan supports configuration files for persistent settings:
+
+```bash
+# Create example configuration
+secscan config init
+
+# Validate configuration
+secscan config validate
+
+# Show merged configuration
+secscan config show
+```
+
+Configuration files (`.secscan.yml` or `secscan.config.json`) support:
+- Ignore rules for vulnerabilities, packages, and paths
+- Severity filtering and scan settings
+- Output preferences
+- CI/CD configuration
+
+### Statistics and Reporting
+
+```bash
+# Show detailed statistics
+secscan --stats
+
+# Save results to file
+secscan -o results.json -f json
+
+# Generate different formats
+secscan -f markdown > report.md
+```
+
 ## How It Works
 
 1. **Language Detection**: SecScan examines the project directory for manifest files to determine the project language
 2. **Dependency Parsing**: Extracts dependency information from the appropriate manifest file
 3. **Vulnerability Checking**: Queries the OSV.dev API for each dependency to find known vulnerabilities
-4. **Result Formatting**: Presents findings in either human-readable text or JSON format with fix commands
+4. **Filtering**: Applies severity, CVSS, exploit, and fix filters based on options
+5. **Policy Checking**: Validates results against defined policies and thresholds
+6. **Result Formatting**: Presents findings in the requested format with fix commands
 
 ## Requirements
 
-- Python 3.6+
+- Python 3.7+
 - `requests` library
+- `pyyaml` library (for configuration files)
 - Internet connection (for OSV.dev API access)
 
 ## License
