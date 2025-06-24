@@ -62,4 +62,7 @@ setup(
     },
     keywords="security vulnerability scanner dependencies npm pip go osv",
     include_package_data=True,
+    data_files=[
+        ('share/man/man1', ['secscan.1']),
+    ],
 )

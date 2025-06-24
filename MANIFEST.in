@@ -2,6 +2,7 @@ include README.md
 include LICENSE
 include requirements.txt
 include pytest.ini
+include secscan.1
 recursive-exclude tests *
 recursive-exclude demo *
 recursive-exclude * __pycache__
