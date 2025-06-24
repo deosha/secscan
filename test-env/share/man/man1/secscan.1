@@ -1,0 +1,192 @@
+.TH SECSCAN 1 "January 2024" "secscan 1.4.0" "User Commands"
+.SH NAME
+secscan \- multi-language dependency vulnerability scanner
+.SH SYNOPSIS
+.B secscan
+[\fIoptions\fR] [\fIpath\fR]
+.SH DESCRIPTION
+.B secscan
+is a fast, reliable CLI tool that automatically detects and scans dependencies for vulnerabilities in JavaScript, Python, and Go projects using the OSV.dev API.
+.PP
+It performs automatic language detection from manifest files and provides comprehensive vulnerability information with language-specific fix commands.
+.SH OPTIONS
+.TP
+.B path
+Path to project directory (default: current directory)
+.TP
+.B \-h, \-\-help
+Show help message and exit
+.TP
+.B \-v, \-\-version
+Show program's version number and exit
+.TP
+.B \-f, \-\-format {text,json,table,csv,markdown,sarif}
+Output format (default: text)
+.TP
+.B \-o, \-\-output FILE
+Output file (default: stdout)
+.TP
+.B \-\-min\-severity {low,medium,high,critical}
+Minimum severity to report
+.TP
+.B \-\-severity SEVERITY
+Show only specific severities (comma-separated: critical,high)
+.TP
+.B \-\-cvss\-min SCORE
+Filter by minimum CVSS score
+.TP
+.B \-\-exploitable
+Only show vulnerabilities with known exploits
+.TP
+.B \-\-has\-fix
+Only show vulnerabilities with available fixes
+.TP
+.B \-\-fail\-on {none,low,medium,high,critical,any}
+Exit with non-zero code if vulnerabilities at or above this level are found
+.TP
+.B \-\-strict
+Fail on ANY vulnerability regardless of severity
+.TP
+.B \-\-ci
+CI-friendly output mode
+.TP
+.B \-\-max\-critical NUM
+Maximum number of critical vulnerabilities allowed
+.TP
+.B \-\-max\-high NUM
+Maximum number of high vulnerabilities allowed
+.TP
+.B \-\-max\-total NUM
+Maximum total number of vulnerabilities allowed
+.TP
+.B \-\-policy POLICY
+Policy string (e.g., 'critical=0,high<=3,medium<=10')
+.TP
+.B \-\-policy\-file FILE
+Path to policy JSON file
+.TP
+.B \-\-stats
+Show detailed statistics
+.TP
+.B \-\-no\-config
+Ignore configuration files
+.TP
+.B \-\-verbose
+Verbose output
+.TP
+.B \-\-no\-color
+Disable colored output
+.SS "Cache Options"
+.TP
+.B \-\-cache\-dir PATH
+Override default cache directory (~/.secscan/cache)
+.TP
+.B \-\-cache\-ttl SECONDS
+Override cache TTL (default: 86400s/24h)
+.TP
+.B \-\-refresh\-cache
+Force refresh cache, ignoring TTL
+.TP
+.B \-\-clear\-cache
+Clear all cached data
+.TP
+.B \-\-cache\-stats
+Show cache statistics
+.TP
+.B \-\-no\-cache
+Disable caching for this run
+.TP
+.B \-\-offline
+Use only cached data, no network calls
+.SH "CONFIGURATION COMMANDS"
+.TP
+.B secscan config init
+Create example configuration file
+.TP
+.B secscan config validate
+Validate configuration file
+.TP
+.B secscan config show
+Show merged configuration
+.SH "SUPPORTED LANGUAGES"
+.SS JavaScript
+.IP \(bu 2
+package.json - Standard npm package manifest
+.IP \(bu 2
+package-lock.json - npm lock file (v1 and v2/v3 formats)
+.IP \(bu 2
+yarn.lock - Yarn lock file
+.SS Python
+.IP \(bu 2
+requirements.txt - Standard pip requirements
+.IP \(bu 2
+Pipfile - Pipenv manifest
+.IP \(bu 2
+Pipfile.lock - Pipenv lock file
+.IP \(bu 2
+pyproject.toml - Modern Python project file (detection only)
+.IP \(bu 2
+setup.py - Setup tools configuration (detection only)
+.SS Go
+.IP \(bu 2
+go.mod - Go modules file
+.IP \(bu 2
+go.sum - Go checksums file
+.SH "EXIT CODES"
+.TP
+.B 0
+No vulnerabilities found OR vulnerabilities below fail threshold
+.TP
+.B 1
+Vulnerabilities found at or above fail threshold
+.TP
+.B 2
+Scan error occurred
+.SH EXAMPLES
+.TP
+Basic scan of current directory:
+.B secscan
+.TP
+Scan specific directory with JSON output:
+.B secscan /path/to/project -f json
+.TP
+CI/CD integration with fail on high severity:
+.B secscan --ci --fail-on high
+.TP
+Show only critical issues with exploits:
+.B secscan --severity critical --exploitable
+.TP
+Show fixable vulnerabilities:
+.B secscan --has-fix --min-severity medium
+.TP
+Enforce security policy:
+.B secscan --policy "critical=0,high=0" --stats
+.TP
+Offline scan using cached data:
+.B secscan --offline
+.TP
+View cache statistics:
+.B secscan --cache-stats
+.SH FILES
+.TP
+.I ~/.secscan/config.yml
+Global configuration file
+.TP
+.I .secscan.yml
+Project-level configuration file
+.TP
+.I ~/.secscan/cache/
+Cache directory containing vulnerability data and scan results
+.SH ENVIRONMENT
+.TP
+.B SECSCAN_CONFIG_PATH
+Override configuration file path
+.TP
+.B SECSCAN_NO_COLOR
+Disable colored output (same as --no-color)
+.SH "SEE ALSO"
+Project homepage: https://github.com/deosha/secscan
+.SH AUTHOR
+Deo Shankar <deoshankar89@gmail.com>
+.SH "REPORTING BUGS"
+Report bugs at: https://github.com/deosha/secscan/issues

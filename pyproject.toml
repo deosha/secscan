@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "secscan-cli"
-version = "1.4.0"
+version = "1.4.1"
 description = "A multi-language dependency vulnerability scanner supporting JavaScript, Python, and Go"
 readme = "README.md"
 authors = [
