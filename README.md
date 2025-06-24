@@ -38,7 +38,7 @@ pip install secscan-cli
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/secscan.git
+git clone https://github.com/deosha/secscan.git
 cd secscan
 
 # Install in development mode
