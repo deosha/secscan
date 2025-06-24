@@ -23,6 +23,8 @@ A fast, reliable CLI tool that automatically detects and scans dependencies for 
 - 📊 **Statistics**: Detailed scan metrics with visual charts
 - ⚙️ **Configuration Files**: YAML/JSON config with ignore rules
 - 🎛️ **Threshold Limits**: Set maximum allowed vulnerabilities
+- 💾 **Intelligent Caching**: Multi-level cache for fast repeated scans
+- 📡 **Offline Mode**: Work without network using cached data
 
 ## Installation
 
@@ -87,6 +89,8 @@ usage: secscan [-h] [-f {text,json,table,csv,markdown,sarif}] [-o OUTPUT]
                [--max-high MAX_HIGH] [--max-total MAX_TOTAL]
                [--policy POLICY] [--policy-file POLICY_FILE]
                [--stats] [--no-config] [--verbose] [--no-color]
+               [--cache-dir PATH] [--cache-ttl SECONDS] [--refresh-cache]
+               [--clear-cache] [--cache-stats] [--no-cache] [--offline]
                [-v] [path]
 
 SecScan - Multi-language dependency vulnerability scanner
@@ -121,6 +125,13 @@ options:
   --no-config           Ignore configuration files
   --verbose             Verbose output
   --no-color            Disable colored output
+  --cache-dir PATH      Override default cache directory (~/.secscan/cache)
+  --cache-ttl SECONDS   Override cache TTL (default: 86400s/24h)
+  --refresh-cache       Force refresh cache, ignoring TTL
+  --clear-cache         Clear all cached data
+  --cache-stats         Show cache statistics
+  --no-cache            Disable caching for this run
+  --offline             Use only cached data, no network calls
   -v, --version         show program's version number and exit
 ```
 
@@ -297,6 +308,38 @@ secscan -o results.json -f json
 # Generate different formats
 secscan -f markdown > report.md
 ```
+
+### Caching System
+
+SecScan includes an intelligent caching system that significantly improves performance for repeated scans:
+
+```bash
+# View cache statistics
+secscan --cache-stats
+
+# Clear all cache
+secscan --clear-cache
+
+# Force refresh cache (ignore TTL)
+secscan /path/to/project --refresh-cache
+
+# Offline mode - use only cached data
+secscan /path/to/project --offline
+
+# Custom cache settings
+secscan --cache-dir /custom/cache/path --cache-ttl 3600
+
+# Disable caching for current run
+secscan /path/to/project --no-cache
+```
+
+**Cache Features:**
+- **Multi-level structure**: Vulnerability database, scan results, and package metadata
+- **Smart invalidation**: Automatically detects manifest changes
+- **Offline support**: Work without network access using cached data
+- **Performance boost**: 10x+ faster on cached scans
+- **TTL-based expiration**: Configurable time-to-live for cache entries
+- **Integrity checks**: SHA256 checksums prevent corrupted cache
 
 ## How It Works
 

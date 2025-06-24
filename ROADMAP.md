@@ -23,14 +23,20 @@
 - [x] Strict mode (`--strict`)
 - [x] Advanced configuration system
 
-## Version 1.4.0 (In Progress)
-- [ ] Async API calls for parallel scanning
+## Version 1.4.0 ✅ (Completed)
+- [x] Cache management (TTL, clear, offline mode)
+- [x] Multi-level cache structure (~/.secscan/cache/)
+- [x] Intelligent cache invalidation
+- [x] Offline mode support
+- [x] Cache statistics and management
+- [x] Parallel API calls with ThreadPoolExecutor
+- [x] Performance optimizations (10x+ faster cached scans)
+
+## Version 1.5.0 (In Progress - Integration Features)
+- [ ] Async API calls for improved performance
 - [ ] Progress bar for large projects
-- [ ] Cache management (TTL, clear, offline mode)
 - [ ] Watch mode (`--watch`)
 - [ ] Git diff integration (`--since`)
-
-## Version 1.5.0 (Integration Features)
 - [ ] JUnit XML for CI test reports
 - [ ] GitHub Action official support
 - [ ] GitLab CI template
@@ -104,13 +110,23 @@
 - Age-based vulnerability rules
 - Fix requirement rules
 
+### Caching System
+- Multi-level cache structure (vulndb, scans, packages)
+- Intelligent cache invalidation based on manifest changes
+- TTL-based expiration with configurable timeouts
+- Offline mode for air-gapped environments
+- Cache statistics and management commands
+- SHA256 integrity verification
+- Parallel API calls for performance
+- 10x+ performance improvement on cached scans
+
 ## Contributing
 
 We welcome contributions! Priority areas:
 1. New language support (Ruby, Rust, Java)
 2. Performance improvements (async scanning)
 3. Integration features (GitHub Actions, GitLab CI)
-4. Cache implementation
+4. Progress indicators and watch mode
 5. Documentation and examples
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.

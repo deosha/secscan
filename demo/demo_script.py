@@ -250,6 +250,59 @@ class SecScanDemo:
         # Clean up
         policy_file.unlink(missing_ok=True)
     
+    def demo_caching_features(self):
+        """Demonstrate intelligent caching system"""
+        print("\n\n" + "💾 " * 20)
+        print("CACHING SYSTEM DEMONSTRATIONS")
+        print("💾 " * 20)
+        
+        js_project = str(self.demo_projects / "javascript")
+        
+        # Clear cache first
+        self.run_command(
+            ["--clear-cache"],
+            "Clear Cache - Start with clean cache"
+        )
+        
+        # First scan - builds cache
+        print("\n⏱️  First scan (building cache)...")
+        start = time.time()
+        self.run_command(
+            [js_project, "-f", "text"],
+            "First Scan - Downloads and caches vulnerability data"
+        )
+        first_duration = time.time() - start
+        print(f"Duration: {first_duration:.2f}s")
+        
+        # Second scan - uses cache
+        print("\n⏱️  Second scan (using cache)...")
+        start = time.time()
+        self.run_command(
+            [js_project, "-f", "text"],
+            "Second Scan - Uses cached data for instant results"
+        )
+        second_duration = time.time() - start
+        print(f"Duration: {second_duration:.2f}s")
+        print(f"🚀 Speed improvement: {first_duration/second_duration:.1f}x faster!")
+        
+        # Cache stats
+        self.run_command(
+            ["--cache-stats"],
+            "Cache Statistics - View cache size and age"
+        )
+        
+        # Offline mode
+        self.run_command(
+            [js_project, "--offline", "--ci"],
+            "Offline Mode - Use only cached data, no network calls"
+        )
+        
+        # Force refresh
+        self.run_command(
+            [js_project, "--refresh-cache", "--ci"],
+            "Force Refresh - Ignore cache TTL and fetch fresh data"
+        )
+    
     def generate_html_report(self):
         """Generate an HTML report of all scans"""
         print("\n\n" + "📊 " * 20)
@@ -367,6 +420,9 @@ class SecScanDemo:
         # Advanced features
         self.demo_advanced_features()
         
+        # Caching features
+        self.demo_caching_features()
+        
         # Generate report
         self.generate_html_report()
         
@@ -391,6 +447,14 @@ class SecScanDemo:
         print("✅ Smart exit codes for CI/CD")
         print("✅ Threshold limits and policies")
         print("✅ Combined filter support")
+        print("\n💾 Caching Features:")
+        print("✅ Multi-level cache structure (~/.secscan/cache/)")
+        print("✅ Intelligent vulnerability database caching")
+        print("✅ Scan result caching by manifest hash")
+        print("✅ Offline mode support")
+        print("✅ Cache management commands")
+        print("✅ Automatic cache invalidation")
+        print("✅ Significant performance improvements")
         
         print("\nExample Commands:")
         print("  # Basic scan")
@@ -401,6 +465,10 @@ class SecScanDemo:
         print("  python secscan.py /path/to/project --exploitable --cvss-min 7.0")
         print("\n  # Policy enforcement")
         print("  python secscan.py /path/to/project --policy 'critical=0,high<=3'")
+        print("\n  # Caching operations")
+        print("  python secscan.py /path/to/project --offline  # Use cached data only")
+        print("  python secscan.py --cache-stats               # View cache statistics")
+        print("  python secscan.py --clear-cache               # Clear all cache")
         print("\nFor help: python secscan.py --help")
 
 

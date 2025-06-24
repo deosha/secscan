@@ -7,6 +7,7 @@ Supports JavaScript (npm), Python (pip), and Go modules
 import argparse
 import json
 import sys
+import time
 from pathlib import Path
 from typing import List, Optional, Tuple, Dict, Any
 import requests
@@ -21,6 +22,13 @@ except ImportError:
     # Fallback if config module is not available
     ConfigLoader = None
     SecScanConfig = None
+
+# Import cache module
+try:
+    from cache import CacheManager, CachedOSVClient, format_cache_stats
+except ImportError:
+    CacheManager = None
+    CachedOSVClient = None
 
 
 class Language(Enum):
@@ -424,8 +432,7 @@ class OSVClient:
     
     BASE_URL = "https://api.osv.dev/v1"
     
-    @staticmethod
-    def check_vulnerability(dependency: Dependency) -> List[Vulnerability]:
+    def check_vulnerability(self, dependency: Dependency) -> List[Vulnerability]:
         """Check a dependency for vulnerabilities using OSV API"""
         ecosystem = {
             Language.JAVASCRIPT: "npm",
@@ -738,11 +745,17 @@ class OutputFormatter:
 class SecScan:
     """Main scanner class"""
     
-    def __init__(self, config: Optional[SecScanConfig] = None):
+    def __init__(self, config: Optional[SecScanConfig] = None, cache_manager: Optional[CacheManager] = None):
         self.detector = LanguageDetector()
-        self.osv_client = OSVClient()
         self.formatter = OutputFormatter()
         self.config = config or (SecScanConfig() if SecScanConfig else None)
+        self.cache_manager = cache_manager
+        
+        # Use cached client if cache is available
+        if cache_manager and CachedOSVClient:
+            self.osv_client = CachedOSVClient(cache_manager)
+        else:
+            self.osv_client = OSVClient()
     
     def scan(self, path: Path, output_format: Optional[str] = None, filters: Optional[Dict[str, Any]] = None) -> Tuple[str, ScanResult]:
         """Scan a project for vulnerabilities
@@ -801,10 +814,99 @@ class SecScan:
         
         dependencies = filtered_deps
         
+        # Try to use cached scan results if available
+        if self.cache_manager and not filters.get('refresh_cache'):
+            cached_scan = self.cache_manager.get_scan_cache(manifest_path)
+            if cached_scan:
+                # Check if dependencies match
+                cached_deps = cached_scan.get('dependencies', [])
+                current_deps = [(d.name, d.version) for d in dependencies]
+                cached_dep_list = [(d['name'], d['version']) for d in cached_deps]
+                
+                if set(current_deps) == set(cached_dep_list):
+                    # Use cached results
+                    if filters.get('verbose') or (self.config and self.config.output.verbose):
+                        print("Using cached scan results", file=sys.stderr)
+                    
+                    # Reconstruct dependencies with vulnerabilities
+                    dep_map = {f"{d.name}@{d.version}": d for d in dependencies}
+                    for cached_dep in cached_deps:
+                        key = f"{cached_dep['name']}@{cached_dep['version']}"
+                        if key in dep_map:
+                            dep_map[key].vulnerabilities = [
+                                Vulnerability(**v) for v in cached_dep.get('vulnerabilities', [])
+                            ]
+                    
+                    vulnerable_count = sum(1 for d in dependencies if d.vulnerabilities)
+                    
+                    result = ScanResult(
+                        project_path=str(path),
+                        language=language,
+                        dependencies=dependencies,
+                        vulnerable_count=vulnerable_count,
+                        total_count=len(dependencies)
+                    )
+                    
+                    ci_mode = filters.get('ci_mode', False)
+                    return self.formatter.format_results(result, output_format, ci_mode), result
+        
         # Check vulnerabilities
         vulnerable_count = 0
-        for dep in dependencies:
-            vulns = self.osv_client.check_vulnerability(dep)
+        offline_mode = filters.get('offline', False)
+        use_cache = not filters.get('no_cache', False)
+        
+        # Prepare for batch processing if using cached client
+        if isinstance(self.osv_client, CachedOSVClient):
+            # Batch check all dependencies
+            packages = []
+            ecosystem_map = {
+                Language.JAVASCRIPT: "npm",
+                Language.PYTHON: "PyPI", 
+                Language.GO: "Go"
+            }
+            ecosystem = ecosystem_map.get(language)
+            
+            if ecosystem:
+                for dep in dependencies:
+                    packages.append((ecosystem, dep.name, dep.version))
+                
+                # Progress callback
+                def progress_callback(current, total):
+                    if filters.get('verbose') or (self.config and self.config.output.verbose):
+                        print(f"\rChecking vulnerabilities: [{current}/{total}]", end='', file=sys.stderr)
+                
+                # Batch check
+                results = self.osv_client.batch_check(
+                    packages, use_cache=use_cache, offline=offline_mode,
+                    progress_callback=progress_callback if not filters.get('ci_mode') else None
+                )
+                
+                if filters.get('verbose') or (self.config and self.config.output.verbose):
+                    print("", file=sys.stderr)  # New line after progress
+                
+                # Map results back to dependencies
+                for dep in dependencies:
+                    key = f"{ecosystem}:{dep.name}@{dep.version}"
+                    vuln_data = results.get(key, [])
+                    
+                    # Convert raw vulnerability data to Vulnerability objects
+                    vulns = self._process_vuln_data(vuln_data)
+                    
+                    # Apply filters
+                    dep.vulnerabilities = self._filter_vulnerabilities(vulns, filters)
+                    if dep.vulnerabilities:
+                        vulnerable_count += 1
+            else:
+                # Fallback to regular checking
+                for dep in dependencies:
+                    vulns = self.osv_client.check_vulnerability(dep)
+                    dep.vulnerabilities = self._process_vulnerabilities(vulns, filters)
+                    if dep.vulnerabilities:
+                        vulnerable_count += 1
+        else:
+            # Regular OSV client
+            for dep in dependencies:
+                vulns = self.osv_client.check_vulnerability(dep)
             
             # Apply all filters
             if vulns:
@@ -863,9 +965,174 @@ class SecScan:
             total_count=len(dependencies)
         )
         
+        # Cache scan results if caching is enabled
+        if self.cache_manager and use_cache and not offline_mode:
+            # Prepare cache data
+            cache_data = {
+                'dependencies': [
+                    {
+                        'name': dep.name,
+                        'version': dep.version,
+                        'vulnerabilities': [
+                            {
+                                'id': v.id,
+                                'summary': v.summary,
+                                'details': v.details,
+                                'severity': v.severity.value,
+                                'affected_versions': v.affected_versions,
+                                'fixed_versions': v.fixed_versions,
+                                'references': v.references,
+                                'cvss_score': v.cvss_score,
+                                'cvss_vector': v.cvss_vector,
+                                'has_exploit': v.has_exploit,
+                                'published_date': v.published_date
+                            }
+                            for v in dep.vulnerabilities
+                        ]
+                    }
+                    for dep in dependencies
+                ],
+                'scan_time': time.time(),
+                'language': language.value
+            }
+            
+            try:
+                self.cache_manager.set_scan_cache(manifest_path, cache_data)
+            except:
+                pass  # Don't fail if caching fails
+        
         # Format and return
         ci_mode = filters.get('ci_mode', False)
         return self.formatter.format_results(result, output_format, ci_mode), result
+    
+    def _process_vuln_data(self, vuln_data: List[Dict[str, Any]]) -> List[Vulnerability]:
+        """Convert raw vulnerability data to Vulnerability objects"""
+        vulnerabilities = []
+        
+        for vuln in vuln_data:
+            # Extract severity and CVSS
+            severity = Severity.UNKNOWN
+            cvss_score = None
+            cvss_vector = None
+            
+            if 'severity' in vuln:
+                for sev in vuln['severity']:
+                    if sev['type'] == 'CVSS_V3':
+                        # Handle both numeric scores and CVSS vectors
+                        score_value = sev.get('score', 0)
+                        if isinstance(score_value, str):
+                            if score_value.startswith('CVSS:'):
+                                cvss_vector = score_value
+                                severity = Severity.MEDIUM
+                                cvss_score = 5.0
+                            else:
+                                try:
+                                    cvss_score = float(score_value)
+                                except ValueError:
+                                    cvss_score = 5.0
+                        else:
+                            cvss_score = float(score_value)
+                        
+                        # Apply scoring
+                        if cvss_score is not None:
+                            if cvss_score >= 9.0:
+                                severity = Severity.CRITICAL
+                            elif cvss_score >= 7.0:
+                                severity = Severity.HIGH
+                            elif cvss_score >= 4.0:
+                                severity = Severity.MEDIUM
+                            else:
+                                severity = Severity.LOW
+                        break
+            
+            # Extract affected and fixed versions
+            affected_versions = []
+            fixed_versions = []
+            
+            for affected in vuln.get('affected', []):
+                for range_info in affected.get('ranges', []):
+                    for event in range_info.get('events', []):
+                        if 'introduced' in event:
+                            affected_versions.append(event['introduced'])
+                        if 'fixed' in event:
+                            fixed_versions.append(event['fixed'])
+            
+            # Check for exploit information
+            has_exploit = False
+            for ref in vuln.get('references', []):
+                ref_type = ref.get('type', '').lower()
+                if ref_type in ['exploit', 'poc', 'proof_of_concept']:
+                    has_exploit = True
+                    break
+                url = ref.get('url', '').lower()
+                if any(indicator in url for indicator in ['exploit', 'poc', 'proof-of-concept', 'metasploit']):
+                    has_exploit = True
+                    break
+            
+            # Extract published date
+            published_date = vuln.get('published')
+            
+            vulnerability = Vulnerability(
+                id=vuln.get('id', 'Unknown'),
+                summary=vuln.get('summary', 'No summary available'),
+                details=vuln.get('details', 'No details available'),
+                severity=severity,
+                affected_versions=affected_versions,
+                fixed_versions=fixed_versions,
+                references=[ref.get('url', '') for ref in vuln.get('references', [])],
+                cvss_score=cvss_score,
+                cvss_vector=cvss_vector,
+                has_exploit=has_exploit,
+                published_date=published_date
+            )
+            vulnerabilities.append(vulnerability)
+        
+        return vulnerabilities
+    
+    def _filter_vulnerabilities(self, vulns: List[Vulnerability], filters: Dict[str, Any]) -> List[Vulnerability]:
+        """Apply filters to vulnerabilities"""
+        filtered_vulns = []
+        
+        for vuln in vulns:
+            # Check ignore rules
+            if self.config:
+                ignore_reason = self.config.should_ignore_vulnerability(vuln.id)
+                if ignore_reason:
+                    if self.config.output.verbose or filters.get('verbose'):
+                        print(f"Ignoring {vuln.id}: {ignore_reason}", file=sys.stderr)
+                    continue
+            
+            # Filter by minimum severity
+            severity_order = {"unknown": 0, "low": 1, "medium": 2, "high": 3, "critical": 4}
+            
+            # Check min_severity from config or filters
+            min_severity = filters.get('min_severity') or (self.config.scan.min_severity if self.config else 'low')
+            min_level = severity_order.get(min_severity.lower(), 0)
+            vuln_level = severity_order.get(vuln.severity.value.lower(), 0)
+            
+            if vuln_level < min_level:
+                continue
+            
+            # Filter by specific severities
+            if 'severities' in filters and vuln.severity.value.lower() not in filters['severities']:
+                continue
+            
+            # Filter by CVSS score
+            if 'cvss_min' in filters and vuln.cvss_score:
+                if vuln.cvss_score < filters['cvss_min']:
+                    continue
+            
+            # Filter by exploitable
+            if filters.get('exploitable') and not vuln.has_exploit:
+                continue
+            
+            # Filter by has fix
+            if filters.get('has_fix') and not vuln.fixed_versions:
+                continue
+            
+            filtered_vulns.append(vuln)
+        
+        return filtered_vulns
 
 
 def main():
@@ -894,6 +1161,15 @@ def main():
             # config show
             show_parser = config_subparsers.add_parser("show", help="Display merged configuration")
             show_parser.add_argument("--no-config", action="store_true", help="Show default configuration")
+        
+        if CacheManager:
+            cache_parser = subparsers.add_parser("cache", help="Cache management")
+            cache_subparsers = cache_parser.add_subparsers(dest="cache_command", help="Cache commands")
+            
+            # cache warm
+            warm_parser = cache_subparsers.add_parser("warm", help="Pre-populate cache with common data")
+            warm_parser.add_argument("--ecosystems", nargs="+", choices=["npm", "PyPI", "Go"],
+                                   help="Ecosystems to warm (default: all)")
     else:
         # Regular parser for scanning
         parser = argparse.ArgumentParser(
@@ -983,6 +1259,48 @@ def main():
         action="store_true",
         help="Show detailed statistics"
     )
+    # Cache-related arguments
+    parser.add_argument(
+        "--cache-dir",
+        type=Path,
+        help="Override default cache location"
+    )
+    parser.add_argument(
+        "--cache-ttl",
+        type=int,
+        help="Override cache TTL in seconds (default: 24h)"
+    )
+    parser.add_argument(
+        "--refresh-cache",
+        action="store_true",
+        help="Force refresh ignoring TTL"
+    )
+    parser.add_argument(
+        "--clear-cache",
+        action="store_true",
+        help="Remove all cached data"
+    )
+    parser.add_argument(
+        "--cache-stats",
+        action="store_true",
+        help="Show cache size and age"
+    )
+    parser.add_argument(
+        "--no-cache",
+        action="store_true",
+        help="Disable caching for this run"
+    )
+    parser.add_argument(
+        "--offline",
+        action="store_true",
+        help="Use only cached data, no network calls"
+    )
+    parser.add_argument(
+        "--threads",
+        type=int,
+        default=5,
+        help="Number of parallel threads (default: 5)"
+    )
     parser.add_argument(
         "--no-config",
         action="store_true",
@@ -1029,6 +1347,49 @@ def main():
             config_parser.print_help()
             sys.exit(1)
     
+    # Handle cache commands
+    if hasattr(args, 'command') and args.command == "cache":
+        if not CacheManager:
+            print("Error: Cache module not available", file=sys.stderr)
+            sys.exit(1)
+        
+        cache_manager = CacheManager(cache_dir=args.cache_dir if hasattr(args, 'cache_dir') else None)
+        
+        if args.cache_command == "warm":
+            print("🔥 Warming cache...")
+            
+            def progress_callback(current, total, message):
+                print(f"\r[{current}/{total}] {message}", end='', flush=True)
+            
+            cache_manager.warm_cache(
+                ecosystems=args.ecosystems,
+                progress_callback=progress_callback
+            )
+            print("\n✅ Cache warming complete!")
+            sys.exit(0)
+        else:
+            cache_parser.print_help()
+            sys.exit(1)
+    
+    # Initialize cache manager
+    cache_manager = None
+    if CacheManager and not args.no_cache:
+        cache_manager = CacheManager(
+            cache_dir=args.cache_dir,
+            ttl=args.cache_ttl
+        )
+        
+        # Handle cache operations
+        if args.clear_cache:
+            cache_manager.clear_cache()
+            print("✅ Cache cleared successfully")
+            sys.exit(0)
+        
+        if args.cache_stats:
+            stats = cache_manager.get_cache_stats()
+            print(format_cache_stats(stats))
+            sys.exit(0)
+    
     # Load configuration
     config = None
     if ConfigLoader and not args.no_config:
@@ -1067,10 +1428,21 @@ def main():
     if args.ci:
         filters['ci_mode'] = True
     
+    # Cache filters
+    if args.refresh_cache:
+        filters['refresh_cache'] = True
+    if args.no_cache:
+        filters['no_cache'] = True
+    if args.offline:
+        filters['offline'] = True
+        if args.verbose or (config and config.output.verbose):
+            print("⚠️  Running in offline mode - using only cached data", file=sys.stderr)
+    if args.verbose:
+        filters['verbose'] = True
+    
     # Run scan
-    import time
     start_time = time.time()
-    scanner = SecScan(config)
+    scanner = SecScan(config, cache_manager)
     output, scan_result = scanner.scan(path, args.format, filters)
     scan_duration = time.time() - start_time
     
