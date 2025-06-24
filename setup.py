@@ -41,9 +41,10 @@ setup(
         "Environment :: Console",
     ],
     python_requires=">=3.7",
-    py_modules=["secscan"],
+    py_modules=["secscan", "config", "policy"],
     install_requires=[
         "requests>=2.25.0",
+        "pyyaml>=5.4.0",
     ],
     extras_require={
         "dev": [

@@ -1,0 +1,56 @@
+# SecScan Configuration File
+version: 1
+
+# Ignore specific vulnerabilities or packages
+ignore:
+  vulnerabilities:
+    - id: GHSA-4w2v-q235-vp99
+      reason: "Known SSRF issue - mitigated by network policies"
+      expires: "2025-12-31"
+    - id: GHSA-xvch-5gv4-984h
+      reason: "Expired ignore rule"
+      expires: "2023-01-01"
+  
+  packages:
+    - name: lodash
+      version: "4.17.20"
+      reason: "Cannot upgrade due to breaking changes"
+    - name: "test-*"
+      reason: "Test packages"
+  
+  paths:
+    - "test/**"
+    - "**/node_modules/jest/**"
+
+# Scanning configuration
+scan:
+  min_severity: medium      # Only report medium and above
+  include_dev: true
+  depth: 999
+  languages:
+    - javascript
+    - python
+    - go
+
+# Output configuration
+output:
+  format: json          # JSON format by default
+  file: null
+  verbose: true         # Verbose output
+  no_color: false
+
+# CI/CD configuration
+ci:
+  fail_on: high        # Fail on high severity
+  exit_codes:
+    none: 0
+    low: 0
+    medium: 0
+    high: 1
+    critical: 2
+
+# Cache configuration
+cache:
+  directory: "~/.secscan/cache"
+  ttl: 86400
+  offline: false

@@ -31,6 +31,7 @@ keywords = ["security", "vulnerability", "scanner", "dependencies", "npm", "pip"
 requires-python = ">=3.7"
 dependencies = [
     "requests>=2.25.0",
+    "pyyaml>=5.4.0",
 ]
 
 [project.optional-dependencies]
@@ -52,7 +53,7 @@ Documentation = "https://github.com/yourusername/secscan#readme"
 secscan = "secscan:main"
 
 [tool.setuptools]
-py-modules = ["secscan"]
+py-modules = ["secscan", "config", "policy"]
 
 [tool.black]
 line-length = 88

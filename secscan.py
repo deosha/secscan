@@ -8,11 +8,19 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Dict, Any
 import requests
 from dataclasses import dataclass
 from enum import Enum
 import re
+
+# Import configuration module
+try:
+    from config import ConfigLoader, SecScanConfig, init_config, validate_config, show_config
+except ImportError:
+    # Fallback if config module is not available
+    ConfigLoader = None
+    SecScanConfig = None
 
 
 class Language(Enum):
@@ -40,6 +48,10 @@ class Vulnerability:
     affected_versions: List[str]
     fixed_versions: List[str]
     references: List[str]
+    cvss_score: Optional[float] = None
+    cvss_vector: Optional[str] = None
+    has_exploit: bool = False
+    published_date: Optional[str] = None
 
 
 @dataclass
@@ -444,8 +456,11 @@ class OSVClient:
             
             vulnerabilities = []
             for vuln in data.get('vulns', []):
-                # Extract severity
+                # Extract severity and CVSS
                 severity = Severity.UNKNOWN
+                cvss_score = None
+                cvss_vector = None
+                
                 if 'severity' in vuln:
                     for sev in vuln['severity']:
                         if sev['type'] == 'CVSS_V3':
@@ -454,23 +469,29 @@ class OSVClient:
                             if isinstance(score_value, str):
                                 # Extract score from CVSS vector if present
                                 if score_value.startswith('CVSS:'):
-                                    # Default to MEDIUM if we can't parse
-                                    severity = Severity.MEDIUM
+                                    cvss_vector = score_value
+                                    # Try to extract score from vector
+                                    import re
+                                    score_match = re.search(r'/AV:[NLAP]/AC:[LH]/PR:[NLH]/UI:[NR]/S:[UC]/C:[NLH]/I:[NLH]/A:[NLH]', score_value)
+                                    if score_match:
+                                        # Default to MEDIUM if we can't calculate
+                                        severity = Severity.MEDIUM
+                                        cvss_score = 5.0
                                 else:
                                     try:
-                                        score = float(score_value)
+                                        cvss_score = float(score_value)
                                     except ValueError:
-                                        score = 5.0  # Default to medium
+                                        cvss_score = 5.0  # Default to medium
                             else:
-                                score = float(score_value)
+                                cvss_score = float(score_value)
                             
                             # Only apply scoring if we have a numeric score
-                            if not isinstance(score_value, str) or not score_value.startswith('CVSS:'):
-                                if score >= 9.0:
+                            if cvss_score is not None:
+                                if cvss_score >= 9.0:
                                     severity = Severity.CRITICAL
-                                elif score >= 7.0:
+                                elif cvss_score >= 7.0:
                                     severity = Severity.HIGH
-                                elif score >= 4.0:
+                                elif cvss_score >= 4.0:
                                     severity = Severity.MEDIUM
                                 else:
                                     severity = Severity.LOW
@@ -489,6 +510,22 @@ class OSVClient:
                                 if 'fixed' in event:
                                     fixed_versions.append(event['fixed'])
                 
+                # Check for exploit information
+                has_exploit = False
+                for ref in vuln.get('references', []):
+                    ref_type = ref.get('type', '').lower()
+                    if ref_type in ['exploit', 'poc', 'proof_of_concept']:
+                        has_exploit = True
+                        break
+                    # Also check URLs for exploit indicators
+                    url = ref.get('url', '').lower()
+                    if any(indicator in url for indicator in ['exploit', 'poc', 'proof-of-concept', 'metasploit']):
+                        has_exploit = True
+                        break
+                
+                # Extract published date
+                published_date = vuln.get('published')
+                
                 vulnerability = Vulnerability(
                     id=vuln.get('id', 'Unknown'),
                     summary=vuln.get('summary', 'No summary available'),
@@ -496,7 +533,11 @@ class OSVClient:
                     severity=severity,
                     affected_versions=affected_versions,
                     fixed_versions=fixed_versions,
-                    references=[ref.get('url', '') for ref in vuln.get('references', [])]
+                    references=[ref.get('url', '') for ref in vuln.get('references', [])],
+                    cvss_score=cvss_score,
+                    cvss_vector=cvss_vector,
+                    has_exploit=has_exploit,
+                    published_date=published_date
                 )
                 vulnerabilities.append(vulnerability)
             
@@ -511,9 +552,11 @@ class OutputFormatter:
     """Formats scan results with language-specific fix commands"""
     
     @staticmethod
-    def format_results(result: ScanResult, format_type: str = "text") -> str:
+    def format_results(result: ScanResult, format_type: str = "text", ci_mode: bool = False) -> str:
         """Format scan results"""
-        if format_type == "json":
+        if ci_mode:
+            return OutputFormatter._format_ci(result)
+        elif format_type == "json":
             return OutputFormatter._format_json(result)
         else:
             return OutputFormatter._format_text(result)
@@ -610,23 +653,125 @@ class OutputFormatter:
                 return f"go get {dependency.name}@v{fixed_version}"
         
         return "No fix available"
+    
+    @staticmethod
+    def _format_ci(result: ScanResult) -> str:
+        """Format results for CI environments"""
+        lines = []
+        
+        # Count by severity
+        severity_counts = {s: 0 for s in Severity}
+        for dep in result.dependencies:
+            for vuln in dep.vulnerabilities:
+                severity_counts[vuln.severity] += 1
+        
+        # Summary line
+        severity_summary = []
+        if severity_counts[Severity.CRITICAL] > 0:
+            severity_summary.append(f"{severity_counts[Severity.CRITICAL]} critical")
+        if severity_counts[Severity.HIGH] > 0:
+            severity_summary.append(f"{severity_counts[Severity.HIGH]} high")
+        if severity_counts[Severity.MEDIUM] > 0:
+            severity_summary.append(f"{severity_counts[Severity.MEDIUM]} medium")
+        if severity_counts[Severity.LOW] > 0:
+            severity_summary.append(f"{severity_counts[Severity.LOW]} low")
+        
+        if result.vulnerable_count == 0:
+            lines.append("secscan: no vulnerabilities found")
+        else:
+            lines.append(f"secscan: found {sum(severity_counts.values())} vulnerabilities ({', '.join(severity_summary)})")
+        
+        # Show vulnerabilities
+        if result.vulnerable_count > 0:
+            lines.append("")
+            for severity in [Severity.CRITICAL, Severity.HIGH, Severity.MEDIUM, Severity.LOW]:
+                for dep in result.dependencies:
+                    for vuln in dep.vulnerabilities:
+                        if vuln.severity == severity:
+                            cvss_info = f" (CVSS: {vuln.cvss_score})" if vuln.cvss_score else ""
+                            exploit_info = " [EXPLOIT]" if vuln.has_exploit else ""
+                            lines.append(f"{severity.value}: {dep.name}@{dep.version} - {vuln.id}{cvss_info}{exploit_info}")
+        
+        return "\n".join(lines)
+    
+    @staticmethod
+    def format_stats(result: ScanResult, scan_duration: float = 0) -> str:
+        """Format detailed statistics"""
+        lines = []
+        
+        # Count statistics
+        severity_counts = {s.value: 0 for s in Severity}
+        exploitable_count = 0
+        fixable_count = 0
+        total_vulns = 0
+        
+        for dep in result.dependencies:
+            for vuln in dep.vulnerabilities:
+                severity_counts[vuln.severity.value] += 1
+                total_vulns += 1
+                if vuln.has_exploit:
+                    exploitable_count += 1
+                if vuln.fixed_versions:
+                    fixable_count += 1
+        
+        lines.append("📊 Scan Statistics")
+        lines.append("=" * 50)
+        lines.append(f"📦 Total packages scanned: {result.total_count}")
+        lines.append(f"⚠️  Vulnerable packages: {result.vulnerable_count}")
+        lines.append(f"🔍 Total vulnerabilities: {total_vulns}")
+        if scan_duration > 0:
+            lines.append(f"⏱️  Scan duration: {scan_duration:.2f}s")
+        
+        lines.append("\n📈 Severity Breakdown:")
+        for severity in [Severity.CRITICAL, Severity.HIGH, Severity.MEDIUM, Severity.LOW]:
+            count = severity_counts[severity.value]
+            if count > 0:
+                bar = "█" * min(count, 50)
+                lines.append(f"  {severity.value:8} [{count:3}] {bar}")
+        
+        lines.append(f"\n🔧 Fixable vulnerabilities: {fixable_count}/{total_vulns} ({fixable_count/total_vulns*100:.1f}%)" if total_vulns > 0 else "\n🔧 Fixable vulnerabilities: 0/0")
+        lines.append(f"💣 Exploitable vulnerabilities: {exploitable_count}")
+        
+        return "\n".join(lines)
 
 
 class SecScan:
     """Main scanner class"""
     
-    def __init__(self):
+    def __init__(self, config: Optional[SecScanConfig] = None):
         self.detector = LanguageDetector()
         self.osv_client = OSVClient()
         self.formatter = OutputFormatter()
+        self.config = config or (SecScanConfig() if SecScanConfig else None)
     
-    def scan(self, path: Path, output_format: str = "text") -> str:
-        """Scan a project for vulnerabilities"""
+    def scan(self, path: Path, output_format: Optional[str] = None, filters: Optional[Dict[str, Any]] = None) -> Tuple[str, ScanResult]:
+        """Scan a project for vulnerabilities
+        Returns: (formatted_output, scan_result)
+        """
+        # Use output format from config if not specified
+        if output_format is None and self.config:
+            output_format = self.config.output.format
+        else:
+            output_format = output_format or "text"
+        
+        filters = filters or {}
+        
+        # Check if path should be ignored
+        if self.config and self.config.should_ignore_path(str(path)):
+            error_result = ScanResult(str(path), Language.UNKNOWN, [], 0, 0)
+            return f"Path {path} is ignored by configuration", error_result
+        
         # Detect language
         language, manifest_path = self.detector.detect(path)
         
         if language == Language.UNKNOWN:
-            return "Error: Could not detect project language. No manifest file found."
+            error_result = ScanResult(str(path), Language.UNKNOWN, [], 0, 0)
+            return "Error: Could not detect project language. No manifest file found.", error_result
+        
+        # Check if language is enabled in config
+        if self.config and language.value not in self.config.scan.languages:
+            error_result = ScanResult(str(path), language, [], 0, 0)
+            return f"Language {language.value} is not enabled in configuration", error_result
         
         # Parse dependencies
         if language == Language.JAVASCRIPT:
@@ -638,10 +783,73 @@ class SecScan:
         else:
             dependencies = []
         
+        # Filter dev dependencies if configured
+        if self.config and not self.config.scan.include_dev:
+            # This would need to be implemented in parsers to track dev deps
+            pass
+        
+        # Apply package ignore rules
+        filtered_deps = []
+        for dep in dependencies:
+            if self.config:
+                ignore_reason = self.config.should_ignore_package(dep.name, dep.version)
+                if ignore_reason:
+                    if self.config.output.verbose:
+                        print(f"Ignoring {dep.name}@{dep.version}: {ignore_reason}", file=sys.stderr)
+                    continue
+            filtered_deps.append(dep)
+        
+        dependencies = filtered_deps
+        
         # Check vulnerabilities
         vulnerable_count = 0
         for dep in dependencies:
             vulns = self.osv_client.check_vulnerability(dep)
+            
+            # Apply all filters
+            if vulns:
+                filtered_vulns = []
+                for vuln in vulns:
+                    # Check ignore rules
+                    if self.config:
+                        ignore_reason = self.config.should_ignore_vulnerability(vuln.id)
+                        if ignore_reason:
+                            if self.config.output.verbose:
+                                print(f"Ignoring {vuln.id}: {ignore_reason}", file=sys.stderr)
+                            continue
+                    
+                    # Filter by minimum severity
+                    severity_order = {"unknown": 0, "low": 1, "medium": 2, "high": 3, "critical": 4}
+                    
+                    # Check min_severity from config or filters
+                    min_severity = filters.get('min_severity') or (self.config.scan.min_severity if self.config else 'low')
+                    min_level = severity_order.get(min_severity.lower(), 0)
+                    vuln_level = severity_order.get(vuln.severity.value.lower(), 0)
+                    
+                    if vuln_level < min_level:
+                        continue
+                    
+                    # Filter by specific severities
+                    if 'severities' in filters and vuln.severity.value.lower() not in filters['severities']:
+                        continue
+                    
+                    # Filter by CVSS score
+                    if 'cvss_min' in filters and vuln.cvss_score:
+                        if vuln.cvss_score < filters['cvss_min']:
+                            continue
+                    
+                    # Filter by exploitable
+                    if filters.get('exploitable') and not vuln.has_exploit:
+                        continue
+                    
+                    # Filter by has fix
+                    if filters.get('has_fix') and not vuln.fixed_versions:
+                        continue
+                    
+                    filtered_vulns.append(vuln)
+                
+                vulns = filtered_vulns
+            
             dep.vulnerabilities = vulns
             if vulns:
                 vulnerable_count += 1
@@ -656,25 +864,139 @@ class SecScan:
         )
         
         # Format and return
-        return self.formatter.format_results(result, output_format)
+        ci_mode = filters.get('ci_mode', False)
+        return self.formatter.format_results(result, output_format, ci_mode), result
 
 
 def main():
     """Main CLI entry point"""
-    parser = argparse.ArgumentParser(
-        description="SecScan - Multi-language dependency vulnerability scanner"
-    )
-    parser.add_argument(
-        "path",
-        nargs="?",
-        default=".",
-        help="Path to project directory (default: current directory)"
-    )
+    # Check if first argument is 'config' to use subparser
+    import sys
+    if len(sys.argv) > 1 and sys.argv[1] == 'config':
+        # Use subparser for config commands
+        parser = argparse.ArgumentParser(
+            description="SecScan - Multi-language dependency vulnerability scanner"
+        )
+        subparsers = parser.add_subparsers(dest="command", help="Commands")
+        
+        if ConfigLoader:
+            config_parser = subparsers.add_parser("config", help="Configuration management")
+            config_subparsers = config_parser.add_subparsers(dest="config_command", help="Config commands")
+            
+            # config init
+            init_parser = config_subparsers.add_parser("init", help="Create example configuration file")
+            init_parser.add_argument("--path", type=Path, help="Directory to create config in")
+            
+            # config validate
+            validate_parser = config_subparsers.add_parser("validate", help="Validate configuration file")
+            validate_parser.add_argument("--file", type=Path, help="Config file to validate")
+            
+            # config show
+            show_parser = config_subparsers.add_parser("show", help="Display merged configuration")
+            show_parser.add_argument("--no-config", action="store_true", help="Show default configuration")
+    else:
+        # Regular parser for scanning
+        parser = argparse.ArgumentParser(
+            description="SecScan - Multi-language dependency vulnerability scanner"
+        )
+        parser.add_argument(
+            "path",
+            nargs="?",
+            default=".",
+            help="Path to project directory (default: current directory)"
+        )
+    # Add common arguments
     parser.add_argument(
         "-f", "--format",
-        choices=["text", "json"],
-        default="text",
-        help="Output format (default: text)"
+        choices=["text", "json", "table", "csv", "markdown", "sarif"],
+        help="Output format"
+    )
+    parser.add_argument(
+        "-o", "--output",
+        help="Output file (default: stdout)"
+    )
+    parser.add_argument(
+        "--min-severity",
+        choices=["low", "medium", "high", "critical"],
+        help="Minimum severity to report"
+    )
+    parser.add_argument(
+        "--severity",
+        help="Show only specific severities (comma-separated: critical,high)"
+    )
+    parser.add_argument(
+        "--cvss-min",
+        type=float,
+        help="Filter by minimum CVSS score"
+    )
+    parser.add_argument(
+        "--exploitable",
+        action="store_true",
+        help="Only show vulnerabilities with known exploits"
+    )
+    parser.add_argument(
+        "--has-fix",
+        action="store_true",
+        help="Only show vulnerabilities with available fixes"
+    )
+    parser.add_argument(
+        "--fail-on",
+        choices=["none", "low", "medium", "high", "critical", "any"],
+        help="Exit with non-zero code if vulnerabilities at or above this level are found"
+    )
+    parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="Fail on ANY vulnerability regardless of severity"
+    )
+    parser.add_argument(
+        "--ci",
+        action="store_true",
+        help="CI-friendly output mode"
+    )
+    parser.add_argument(
+        "--max-critical",
+        type=int,
+        help="Maximum number of critical vulnerabilities allowed"
+    )
+    parser.add_argument(
+        "--max-high",
+        type=int,
+        help="Maximum number of high vulnerabilities allowed"
+    )
+    parser.add_argument(
+        "--max-total",
+        type=int,
+        help="Maximum total number of vulnerabilities allowed"
+    )
+    parser.add_argument(
+        "--policy",
+        help="Policy string (e.g., 'critical=0,high<=3,medium<=10')"
+    )
+    parser.add_argument(
+        "--policy-file",
+        type=Path,
+        help="Path to policy JSON file"
+    )
+    parser.add_argument(
+        "--stats",
+        action="store_true",
+        help="Show detailed statistics"
+    )
+    parser.add_argument(
+        "--no-config",
+        action="store_true",
+        help="Ignore configuration files"
+    )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Verbose output"
+    )
+    parser.add_argument(
+        "--no-color",
+        action="store_true",
+        help="Disable colored output"
     )
     parser.add_argument(
         "-v", "--version",
@@ -684,16 +1006,198 @@ def main():
     
     args = parser.parse_args()
     
+    # Handle config commands
+    if hasattr(args, 'command') and args.command == "config":
+        if not ConfigLoader:
+            print("Error: Configuration module not available", file=sys.stderr)
+            sys.exit(1)
+        
+        if args.config_command == "init":
+            path = Path(args.path) if args.path else Path.cwd()
+            success = init_config(path)
+            sys.exit(0 if success else 1)
+        
+        elif args.config_command == "validate":
+            success = validate_config(args.file)
+            sys.exit(0 if success else 1)
+        
+        elif args.config_command == "show":
+            show_config(no_config=args.no_config)
+            sys.exit(0)
+        
+        else:
+            config_parser.print_help()
+            sys.exit(1)
+    
+    # Load configuration
+    config = None
+    if ConfigLoader and not args.no_config:
+        loader = ConfigLoader()
+        config = loader.load_config()
+        
+        # Merge CLI arguments with config
+        config = loader.merge_with_cli_args(config, args)
+        
+        # Apply verbose setting
+        if config.output.verbose:
+            print(f"Loaded configuration from: {', '.join(loader.configs_loaded) if loader.configs_loaded else 'defaults'}", file=sys.stderr)
+    
     # Validate path
     path = Path(args.path).resolve()
     if not path.exists():
         print(f"Error: Path {path} does not exist", file=sys.stderr)
         sys.exit(1)
     
+    # Build filters from CLI arguments
+    filters = {}
+    
+    # Severity filters
+    if args.severity:
+        filters['severities'] = [s.strip().lower() for s in args.severity.split(',')]
+    if args.min_severity:
+        filters['min_severity'] = args.min_severity
+    
+    # Other filters
+    if args.cvss_min:
+        filters['cvss_min'] = args.cvss_min
+    if args.exploitable:
+        filters['exploitable'] = True
+    if args.has_fix:
+        filters['has_fix'] = True
+    if args.ci:
+        filters['ci_mode'] = True
+    
     # Run scan
-    scanner = SecScan()
-    result = scanner.scan(path, args.format)
-    print(result)
+    import time
+    start_time = time.time()
+    scanner = SecScan(config)
+    output, scan_result = scanner.scan(path, args.format, filters)
+    scan_duration = time.time() - start_time
+    
+    # Show statistics if requested
+    if args.stats:
+        print(OutputFormatter.format_stats(scan_result, scan_duration))
+        print()  # Empty line before main output
+    
+    # Handle CI mode timing
+    if args.ci:
+        print(f"secscan: scanning project...", file=sys.stderr)
+        print(f"secscan: scan completed in {scan_duration:.1f}s", file=sys.stderr)
+        print(file=sys.stderr)  # Empty line
+    
+    # Handle output
+    if args.output or (config and config.output.file):
+        output_file = Path(args.output or config.output.file)
+        try:
+            output_file.write_text(output)
+            if (config and config.output.verbose) or args.verbose:
+                print(f"Results written to {output_file}", file=sys.stderr)
+        except Exception as e:
+            print(f"Error writing to {output_file}: {e}", file=sys.stderr)
+            sys.exit(2)
+    else:
+        print(output)
+    
+    # Check policy if specified
+    policy_violations = []
+    if args.policy or args.policy_file:
+        try:
+            # Import policy module
+            from policy import PolicyRule, PolicyChecker
+            
+            if args.policy_file:
+                policy_rule = PolicyRule.from_file(args.policy_file)
+            else:
+                policy_rule = PolicyRule.from_string(args.policy)
+            
+            # Check policy
+            all_vulns = []
+            for dep in scan_result.dependencies:
+                all_vulns.extend(dep.vulnerabilities)
+            
+            checker = PolicyChecker(policy_rule)
+            passes, violations = checker.check_vulnerabilities(all_vulns)
+            
+            if not passes:
+                policy_violations = violations
+                if args.verbose or (config and config.output.verbose):
+                    print("\n❌ Policy Violations:", file=sys.stderr)
+                    for violation in violations:
+                        print(f"  - {violation}", file=sys.stderr)
+        except Exception as e:
+            print(f"Error checking policy: {e}", file=sys.stderr)
+            sys.exit(2)
+    
+    # Check threshold limits
+    threshold_violations = []
+    severity_counts = {}
+    total_vulns = 0
+    
+    for dep in scan_result.dependencies:
+        for vuln in dep.vulnerabilities:
+            severity_key = vuln.severity.value.lower()
+            severity_counts[severity_key] = severity_counts.get(severity_key, 0) + 1
+            total_vulns += 1
+    
+    if args.max_critical is not None and severity_counts.get('critical', 0) > args.max_critical:
+        threshold_violations.append(f"Found {severity_counts.get('critical', 0)} critical vulnerabilities (max: {args.max_critical})")
+    
+    if args.max_high is not None and severity_counts.get('high', 0) > args.max_high:
+        threshold_violations.append(f"Found {severity_counts.get('high', 0)} high vulnerabilities (max: {args.max_high})")
+    
+    if args.max_total is not None and total_vulns > args.max_total:
+        threshold_violations.append(f"Found {total_vulns} total vulnerabilities (max: {args.max_total})")
+    
+    if threshold_violations and (args.verbose or (config and config.output.verbose)):
+        print("\n❌ Threshold Violations:", file=sys.stderr)
+        for violation in threshold_violations:
+            print(f"  - {violation}", file=sys.stderr)
+    
+    # Determine exit code
+    exit_code = 0
+    exit_reason = None
+    
+    # Check strict mode
+    if args.strict and total_vulns > 0:
+        exit_code = 1
+        exit_reason = "strict mode - any vulnerabilities found"
+    
+    # Check fail-on level
+    elif args.fail_on or (config and config.ci.fail_on != "none"):
+        fail_on = args.fail_on or (config.ci.fail_on if config else "none")
+        if fail_on == "any" and total_vulns > 0:
+            exit_code = 1
+            exit_reason = "any vulnerabilities found"
+        elif fail_on != "none":
+            severity_order = {"low": 0, "medium": 1, "high": 2, "critical": 3}
+            fail_level = severity_order.get(fail_on.lower(), -1)
+            
+            for severity in ["critical", "high", "medium", "low"]:
+                if severity_counts.get(severity, 0) > 0:
+                    if severity_order.get(severity, -1) >= fail_level:
+                        exit_code = 1
+                        if config and severity in config.ci.exit_codes:
+                            exit_code = config.ci.exit_codes[severity]
+                        exit_reason = f"{severity} severity vulnerabilities found (--fail-on={fail_on})"
+                        break
+    
+    # Check policy violations
+    if policy_violations:
+        exit_code = max(exit_code, 1)
+        exit_reason = "policy violations"
+    
+    # Check threshold violations
+    if threshold_violations:
+        exit_code = max(exit_code, 1)
+        exit_reason = "threshold violations"
+    
+    # Handle CI mode exit message
+    if args.ci and exit_code > 0 and exit_reason:
+        print(f"\nsecscan: failing due to {exit_reason}", file=sys.stderr)
+    elif exit_code > 0 and (args.verbose or (config and config.output.verbose)):
+        print(f"\nExiting with code {exit_code} due to {exit_reason}", file=sys.stderr)
+    
+    sys.exit(exit_code)
 
 
 if __name__ == "__main__":

@@ -120,6 +120,136 @@ class SecScanDemo:
             "Scanning Mixed Project (JavaScript + Python)"
         )
     
+    def demo_advanced_features(self):
+        """Demonstrate advanced filtering and CI/CD features"""
+        print("\n\n" + "🚀 " * 20)
+        print("ADVANCED FEATURES DEMONSTRATIONS")
+        print("🚀 " * 20)
+        
+        js_project = str(self.demo_projects / "javascript")
+        py_project = str(self.demo_projects / "python")
+        
+        # CI Mode
+        self.run_command(
+            [js_project, "--ci"],
+            "CI Mode - Minimal output for CI/CD pipelines"
+        )
+        time.sleep(1)
+        
+        # Statistics
+        self.run_command(
+            [js_project, "--stats", "-f", "text"],
+            "Statistics - Detailed scan statistics with timing"
+        )
+        time.sleep(1)
+        
+        # Severity Filtering
+        self.run_command(
+            [js_project, "--severity", "high,critical", "-f", "text"],
+            "Severity Filter - Show only HIGH and CRITICAL vulnerabilities"
+        )
+        time.sleep(1)
+        
+        # CVSS Score Filtering
+        self.run_command(
+            [js_project, "--cvss-min", "7.0", "-f", "text"],
+            "CVSS Filter - Show only vulnerabilities with CVSS >= 7.0"
+        )
+        time.sleep(1)
+        
+        # Exploitable Filter
+        self.run_command(
+            [js_project, "--exploitable", "-f", "text"],
+            "Exploitable - Show only vulnerabilities with known exploits"
+        )
+        time.sleep(1)
+        
+        # Has Fix Filter
+        self.run_command(
+            [js_project, "--has-fix", "-f", "text"],
+            "Has Fix - Show only vulnerabilities with available fixes"
+        )
+        time.sleep(1)
+        
+        # Fail-On with Exit Codes
+        result = self.run_command(
+            [js_project, "--fail-on", "medium", "--ci"],
+            "Fail-On Medium - Exit with error if MEDIUM+ vulnerabilities found"
+        )
+        print(f"\n💡 Exit code: {result.returncode} (1 = vulnerabilities found)")
+        time.sleep(1)
+        
+        # Strict Mode
+        result = self.run_command(
+            [js_project, "--strict", "--ci"],
+            "Strict Mode - Fail on ANY vulnerability"
+        )
+        print(f"\n💡 Exit code: {result.returncode} (1 = any vulnerabilities found)")
+        time.sleep(1)
+        
+        # Threshold Limits
+        self.run_command(
+            [js_project, "--max-total", "3", "--verbose", "-f", "text"],
+            "Threshold - Maximum 3 total vulnerabilities allowed"
+        )
+        time.sleep(1)
+        
+        # Policy String
+        self.run_command(
+            [js_project, "--policy", "medium<=2,cvss<7.0", "--verbose", "-f", "text"],
+            "Policy String - Max 2 medium vulnerabilities, CVSS < 7.0"
+        )
+        time.sleep(1)
+        
+        # Policy File
+        policy = {
+            "rules": {
+                "max_critical": 0,
+                "max_high": 0,
+                "max_medium": 5,
+                "max_cvss_score": 6.0,
+                "require_fixes_for": ["critical", "high"],
+                "allow_exploitable": False
+            }
+        }
+        policy_file = Path(__file__).parent / "demo-policy.json"
+        policy_file.write_text(json.dumps(policy, indent=2))
+        
+        self.run_command(
+            [js_project, "--policy-file", str(policy_file), "--verbose", "-f", "text"],
+            "Policy File - Complex policy rules from JSON file"
+        )
+        
+        # Combined Filters
+        self.run_command(
+            [js_project, "--has-fix", "--cvss-min", "4.0", "--max-total", "10", "--ci"],
+            "Combined Filters - Multiple filters applied together"
+        )
+        time.sleep(1)
+        
+        # Python project with many vulnerabilities
+        self.run_command(
+            [py_project, "--stats", "--max-total", "50", "-f", "text"],
+            "Large Scan - Python project with many vulnerabilities"
+        )
+        
+        # Output to file
+        output_file = Path(__file__).parent / "scan-results.json"
+        self.run_command(
+            [js_project, "-o", str(output_file), "-f", "json", "--verbose"],
+            "Output to File - Save results as JSON"
+        )
+        
+        if output_file.exists():
+            print("\n📄 Saved results preview:")
+            with open(output_file) as f:
+                data = json.load(f)
+                print(json.dumps(data, indent=2)[:300] + "...")
+            output_file.unlink()
+        
+        # Clean up
+        policy_file.unlink(missing_ok=True)
+    
     def generate_html_report(self):
         """Generate an HTML report of all scans"""
         print("\n\n" + "📊 " * 20)
@@ -234,6 +364,9 @@ class SecScanDemo:
         # Edge cases
         self.demo_edge_cases()
         
+        # Advanced features
+        self.demo_advanced_features()
+        
         # Generate report
         self.generate_html_report()
         
@@ -248,10 +381,26 @@ class SecScanDemo:
         print("✅ Language-specific fix commands")
         print("✅ Graceful error handling")
         print("✅ HTML report generation")
+        print("\n🚀 Advanced Features:")
+        print("✅ CI/CD mode with minimal output")
+        print("✅ Detailed statistics with timing")
+        print("✅ Advanced severity filtering")
+        print("✅ CVSS score filtering")
+        print("✅ Exploit detection")
+        print("✅ Fix availability filtering")
+        print("✅ Smart exit codes for CI/CD")
+        print("✅ Threshold limits and policies")
+        print("✅ Combined filter support")
         
-        print("\nTo use SecScan in your projects:")
+        print("\nExample Commands:")
+        print("  # Basic scan")
         print("  python secscan.py /path/to/project")
-        print("  python secscan.py /path/to/project -f json")
+        print("\n  # CI/CD integration")
+        print("  python secscan.py /path/to/project --ci --fail-on high")
+        print("\n  # Advanced filtering")
+        print("  python secscan.py /path/to/project --exploitable --cvss-min 7.0")
+        print("\n  # Policy enforcement")
+        print("  python secscan.py /path/to/project --policy 'critical=0,high<=3'")
         print("\nFor help: python secscan.py --help")
 
 
