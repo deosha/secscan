@@ -12,17 +12,17 @@ long_description = (this_directory / "README.md").read_text(encoding="utf-8")
 
 setup(
     name="secscan-cli",
-    version="1.0.0",
+    version="1.4.0",
     author="SecScan Contributors",
     author_email="",
     description="A multi-language dependency vulnerability scanner supporting JavaScript, Python, and Go",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/yourusername/secscan",
+    url="https://github.com/deosha/secscan",
     project_urls={
-        "Bug Tracker": "https://github.com/yourusername/secscan/issues",
-        "Documentation": "https://github.com/yourusername/secscan#readme",
-        "Source Code": "https://github.com/yourusername/secscan",
+        "Bug Tracker": "https://github.com/deosha/secscan/issues",
+        "Documentation": "https://github.com/deosha/secscan#readme",
+        "Source Code": "https://github.com/deosha/secscan",
     },
     classifiers=[
         "Development Status :: 4 - Beta",
@@ -41,7 +41,7 @@ setup(
         "Environment :: Console",
     ],
     python_requires=">=3.7",
-    py_modules=["secscan", "config", "policy"],
+    py_modules=["secscan", "config", "policy", "cache"],
     install_requires=[
         "requests>=2.25.0",
         "pyyaml>=5.4.0",

@@ -4,19 +4,18 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "secscan-cli"
-version = "1.0.0"
+version = "1.4.0"
 description = "A multi-language dependency vulnerability scanner supporting JavaScript, Python, and Go"
 readme = "README.md"
 authors = [
     {name = "SecScan Contributors"},
 ]
-license = "MIT"
+license = {text = "MIT"}
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "Topic :: Security",
     "Topic :: Software Development :: Quality Assurance",
-    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.7",
     "Programming Language :: Python :: 3.8",
@@ -44,16 +43,16 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/yourusername/secscan"
-"Bug Tracker" = "https://github.com/yourusername/secscan/issues"
-Documentation = "https://github.com/yourusername/secscan#readme"
-"Source Code" = "https://github.com/yourusername/secscan"
+Homepage = "https://github.com/deosha/secscan"
+"Bug Tracker" = "https://github.com/deosha/secscan/issues"
+Documentation = "https://github.com/deosha/secscan#readme"
+"Source Code" = "https://github.com/deosha/secscan"
 
 [project.scripts]
 secscan = "secscan:main"
 
 [tool.setuptools]
-py-modules = ["secscan", "config", "policy"]
+py-modules = ["secscan", "config", "policy", "cache"]
 
 [tool.black]
 line-length = 88

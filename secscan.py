@@ -4,6 +4,8 @@ SecScan - A multi-language dependency vulnerability scanner
 Supports JavaScript (npm), Python (pip), and Go modules
 """
 
+__version__ = "1.4.0"
+
 import argparse
 import json
 import sys
@@ -1319,7 +1321,7 @@ def main():
     parser.add_argument(
         "-v", "--version",
         action="version",
-        version="SecScan 1.0.0"
+        version=f"SecScan {__version__}"
     )
     
     args = parser.parse_args()

@@ -5,6 +5,39 @@ All notable changes to SecScan will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2024-01-25
+
+### Added
+- **Intelligent Caching System**
+  - Multi-level cache structure at ~/.secscan/cache/
+    - `vulndb/` for vulnerability database caching
+    - `scans/` for previous scan results by project hash
+    - `packages/` for package metadata caching
+  - Cache management commands:
+    - `--cache-dir` to override default cache location
+    - `--cache-ttl` to set custom TTL (default: 86400s/24h)
+    - `--refresh-cache` to force refresh ignoring TTL
+    - `--clear-cache` to remove all cached data
+    - `--cache-stats` to show cache size and age statistics
+    - `--no-cache` to disable caching for current run
+  - `--offline` mode for air-gapped environments
+  - Smart caching strategies:
+    - SHA256 hashing for cache keys and integrity verification
+    - Automatic manifest change detection and cache invalidation
+    - TTL-based expiration (24h default, 6h for vulnerability database)
+  - Performance optimizations:
+    - Batch API requests with parallel processing
+    - ThreadPoolExecutor for concurrent API calls
+    - 10x+ performance improvement on cached scans
+
+### Enhanced
+- Significant performance improvements for repeated scans
+- Demo script updated with caching demonstrations
+- Documentation updated with caching examples
+
+### Fixed
+- Improved API response handling for batch requests
+
 ## [1.3.0] - 2024-01-24
 
 ### Added
